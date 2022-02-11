@@ -1,0 +1,203 @@
+VERSION 5.00
+Begin VB.Form frmBinaryArb 
+   Caption         =   "Arbitrary Waveform"
+   ClientHeight    =   2400
+   ClientLeft      =   75
+   ClientTop       =   360
+   ClientWidth     =   3495
+   LinkTopic       =   "Form1"
+   ScaleHeight     =   2400
+   ScaleWidth      =   3495
+   StartUpPosition =   3  'Windows Default
+   Begin VB.TextBox txtIO 
+      Height          =   375
+      Left            =   1800
+      TabIndex        =   3
+      Text            =   "USB0::2391::1031::MY43003189::0::INSTR"
+      Top             =   480
+      Width           =   1575
+   End
+   Begin VB.TextBox txtError 
+      Height          =   975
+      Left            =   120
+      MultiLine       =   -1  'True
+      TabIndex        =   1
+      Text            =   "FRMBIN~1.frx":0000
+      Top             =   1320
+      Width           =   3255
+   End
+   Begin VB.CommandButton cmdBinaryArb 
+      Caption         =   "Setup Instrument"
+      Height          =   735
+      Left            =   120
+      TabIndex        =   0
+      Top             =   120
+      Width           =   1575
+   End
+   Begin VB.Label lblIO 
+      Caption         =   "IO Address"
+      Height          =   255
+      Left            =   1800
+      TabIndex        =   4
+      Top             =   240
+      Width           =   1575
+   End
+   Begin VB.Label lblError 
+      Caption         =   "Messages"
+      Height          =   375
+      Left            =   120
+      TabIndex        =   2
+      Top             =   1080
+      Width           =   2295
+   End
+End
+Attribute VB_Name = "frmBinaryArb"
+Attribute VB_GlobalNameSpace = False
+Attribute VB_Creatable = False
+Attribute VB_PredeclaredId = True
+Attribute VB_Exposed = False
+Option Explicit
+
+' """""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+'    Copyright  2002 Agilent Technologies Inc. All rights
+'    reserved.
+'
+' You have a royalty-free right to use, modify, reproduce and distribute
+' the Sample Application Files (and/or any modified version) in any way
+' you find useful, provided that you agree that Agilent has no
+' warranty,  obligations or liability for any Sample Application Files.
+'
+' Agilent Technologies provides programming examples for illustration only,
+' This sample program assumes that you are familiar with the programming
+' language being demonstrated and the tools used to create and debug
+' procedures. Agilent support engineers can help explain the
+' functionality of Agilent software components and associated
+' commands, but they will not modify these samples to provide added
+' functionality or construct procedures to meet your specific needs.
+' """"""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""""
+
+Private Sub cmdBinaryArb_Click()
+
+    ' This program is an example program intended for use with
+    ' Microsoft Visual Basic 6.0 and the Agilent VISA COM objects.
+    '
+    ' To use the IO object in another Visual Basic project, set the
+    ' reference to include the libraries in the Project/References menu:
+    ' "VISA COM 1.0 Type Library", corresponds to VISACOM.tlb
+    ' "Agilent VISA COM Resource Manager 1.0", corresponds to AgtRM.DLL
+    ' "VISA COM 488.2 Formatted I/O 1.0", corresponds to the BasicFormattedIO.dll
+    '
+    ' Then use a statement such as "Dim Fgen As VisaComLib.FormattedIO488"
+    ' to create the formatted I/O reference and use
+    ' "Set Fgen = New VisaComLib.FormattedIO488" to create the actual object.
+
+    Dim io_mgr As VisaComLib.ResourceManager
+    Dim Fgen As VisaComLib.FormattedIO488
+
+    Set io_mgr = New AgilentRMLib.SRMCls
+    Set Fgen = New VisaComLib.FormattedIO488
+    Set Fgen.IO = io_mgr.Open(txtIO.Text)
+    
+Dim I As Integer
+Dim J As Integer
+Dim Value As String
+Dim pi As Single
+
+Dim Df(1 To 39)
+Dim fr(1 To 39)
+Dim w(1 To 39)
+Dim t(1 To 2001)
+Dim ampl(1 To 39, 1 To 2001)
+Dim ampl_sum(1 To 39, 1 To 2001)
+Dim Waveform(1 To 2001)
+
+ pi = 3.141592654
+
+    On Error GoTo MyError
+
+    ' This program shows how to down load an arbitrary waveform
+    ' using binary data.
+
+    With Fgen
+
+        .IO.Timeout = 40000                                ' Set timeout to 40 seconds for long download strings
+        .WriteString "*RST"                                ' Reset the function generator
+        .WriteString "FORMat:BORDer NORMal"                ' Normal data bytes (send MSB first)
+        
+        .WriteString "FREQuency 500e3"                     ' Output frequency is 500 kHz
+        
+        .WriteString "OUTPut:LOAD 50"                      ' Output termination is 50 Ohms
+        .WriteString "VOLTage 10"                           ' Output amplitude is 10 Vpp (max possible)
+
+    End With
+
+    txtError.Text = ""
+    txtError.SelText = "Computing Waveform..." & vbCrLf
+
+' Calculate data points of arbitrary waveform
+For I = 1 To 39
+
+If I = 1 Then
+Df(I) = 0
+Else
+Df(I) = Df(I - 1) + 0.5                 ' frequency increment 0.5 MHz
+End If
+
+fr(I) = 1000000 + (Df(I) * 1000000)     ' freq. 1MHz to 20 MHz with step 0.5 MHz (39 rows)
+w(I) = 2 * pi * fr(I)
+ 
+
+
+For J = 1 To 2001
+If J = 1 Then
+t(J) = 0
+Else
+t(J) = t(J - 1) + 0.00000001 		' time base from 0 to 2e-5 sec with step 1e-8 s (2001 rows)
+End If
+ampl(I, J) = Sin(w(I) * t(J))           ' amplitude vs. time for each frequency, matrix 39 rows x 2001 columns
+Next J
+
+     
+If I = 1 Then                           ' summing of amplitudes from 2001 rows
+For J = 1 To 2001
+ampl_sum(I, J) = ampl(I, J)
+Next J
+Else
+For J = 1 To c
+ampl_sum(I, J) = ampl(I, J) + ampl_sum(I - 1, J) ' sum of amplitude matrixes produces matrix 39x2001
+Next J
+End If
+
+Next I
+
+For J = 1 To 2001
+Waveform(J) = ampl_sum(39, J)           ' Last row no. 39 contains the total sum of amplitudes
+
+Next J
+
+    ' Download data points to volatile memory from array
+
+    txtError.SelText = "Downloading Arb..." & vbCrLf
+    With Fgen
+        .WriteIEEEBlock "Data:Dac Volatile,", Waveform
+        .WriteString "*OPC?"
+        Value = .ReadString
+    End With
+    txtError.SelText = "Download Complete" & vbCrLf
+
+    With Fgen
+
+        .WriteString "DATA:COPY BW_WAVEF, VOLATILE"       ' Copy arb to non-volatile memory
+        .WriteString "FUNCtion:USER BW_WAVEF"             ' Select the active arb waveform
+        .WriteString "FUNCtion:SHAPe USER"                 ' Output the selected arb waveform
+        .WriteString "OUTPut ON"                           ' Enable output
+
+    End With
+    Exit Sub
+
+MyError:
+
+    txtError = Err.Description & vbCrLf
+    Resume Next
+
+End Sub
